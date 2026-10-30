@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Region {
+  id        Int               @id @default(autoincrement())
+  name      String            @unique
+  slug      String            @unique
+  // Centro da região: preenchido depois (geocodificação ou cadastro). Nunca estimado.
+  latitude  Float?
+  longitude Float?
+  active    Boolean           @default(true)
+  points    CollectionPoint[]
+}
+
+model Material {
+  id          Int                       @id @default(autoincrement())
+  slug        String                    @unique
+  name        String
+  description String?
+  icon        String?
+  color       String?
+  points      CollectionPointMaterial[]
+}
+
+model CollectionPoint {
+  id                 String                    @id @default(uuid())
+  name               String
+  description        String?
+  address            String
+  regionId           Int?
+  region             Region?                   @relation(fields: [regionId], references: [id])
+  city               String                    @default("Brasília")
+  neighborhood       String?
+  postalCode         String?
+  latitude           Float
+  longitude          Float
+  phone              String?
+  openingHours       String?
+  extraInfo          String?
+  source             String
+  sourceUrl          String?
+  verificationStatus VerificationStatus        @default(PENDING)
+  isDemo             Boolean                   @default(false)
+  lastUpdated        DateTime
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  materials          CollectionPointMaterial[]
+
+  @@unique([name, address])
+  @@index([regionId])
+  @@index([verificationStatus])
+}
+
+model CollectionPointMaterial {
+  pointId    String
+  materialId Int
+  point      CollectionPoint @relation(fields: [pointId], references: [id], onDelete: Cascade)
+  material   Material        @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@id([pointId, materialId])
+}
+
+model UserSuggestion {
+  id            String           @id @default(uuid())
+  name          String
+  address       String
+  regionId      Int?
+  materialSlugs String[]
+  phone         String?
+  notes         String?
+  status        SuggestionStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+}
