@@ -2,11 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
-import { DF_CENTER, DF_ZOOM } from '@/lib/constants';
+import { DF_CENTER, DF_ZOOM, TILE_URL, TILE_ATTRIBUTION, TILE_DARK_FILTER } from '@/lib/constants';
 import { pinKind } from '@/lib/geo';
 
-const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 function pinIcon(L, point, selected) {
   return L.divIcon({
@@ -37,7 +35,7 @@ export default function CollectionMap({ points, selectedId, onSelect, userPos, f
 
       const map = L.map(el.current, { zoomControl: false, center: DF_CENTER, zoom: DF_ZOOM, minZoom: 8, maxZoom: 19 });
       L.control.zoom({ position: 'bottomright' }).addTo(map);
-      L.tileLayer(TILES, { attribution: ATTRIBUTION, subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+      L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
 
       const cluster = L.markerClusterGroup({
         showCoverageOnHover: false,
@@ -132,5 +130,5 @@ export default function CollectionMap({ points, selectedId, onSelect, userPos, f
     c.map.flyToBounds(c.L.latLngBounds(route), { paddingTopLeft: [60, 90], paddingBottomRight: [60, 260], maxZoom: 16, duration: 0.8 });
   }, [ready, route]);
 
-  return <div ref={el} className="eco-map" role="application" aria-label="Mapa interativo de pontos de coleta" />;
+  return <div ref={el} className={`eco-map ${TILE_DARK_FILTER ? 'eco-map--dark' : ''}`} role="application" aria-label="Mapa interativo de pontos de coleta" />;
 }

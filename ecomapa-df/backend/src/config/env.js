@@ -4,6 +4,10 @@ import { z } from 'zod';
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
+  // Opcional: sem ele o painel admin fica desativado e o mapa público funciona normalmente.
+  JWT_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32, 'JWT_SECRET precisa ter ao menos 32 caracteres (openssl rand -hex 48)').optional()),
+  JWT_EXPIRES_HOURS: z.coerce.number().int().min(1).max(72).default(8),
+  COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   DATABASE_URL: z.string().min(1),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   INCLUDE_DEMO: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
@@ -24,3 +28,9 @@ export const env = {
   ...parsed.data,
   corsOrigins: parsed.data.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
 };
+
+// Em desenvolvimento aceita qualquer porta local (o Next muda para 3001 se a 3000 estiver ocupada).
+export function isAllowedOrigin(origin) {
+  if (env.corsOrigins.includes(origin)) return true;
+  return env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
+}

@@ -169,3 +169,33 @@ h1, h2, h3 { letter-spacing: -.02em; }
 .eco-mode.is-active { background: var(--cyan); border-color: var(--cyan); color: #04101e; box-shadow: 0 0 14px rgba(0, 217, 255, .5); }
 .eco-route-summary { margin: .7rem 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .7rem; }
 .eco-route-summary strong { font-size: 1.5rem; color: var(--cyan); }
+
+/* Painel administrativo */
+.admin-nav { display: flex; gap: .25rem; flex-wrap: wrap; }
+.admin-nav a { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .8rem; border-radius: 10px; color: var(--muted); text-decoration: none; font-size: .9rem; transition: all .2s; }
+.admin-nav a:hover { color: var(--text); background: rgba(255,255,255,.05); }
+.admin-nav a.is-active { color: #04101e; background: var(--grad); }
+.admin-login { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; background: radial-gradient(ellipse at top, var(--bg2), var(--bg) 70%); }
+.admin-login form { width: min(420px, 100%); }
+.admin-stat { display: grid; gap: .3rem; padding: 1.1rem; height: 100%; background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--border); border-radius: 16px; color: var(--text); transition: transform .2s, box-shadow .2s; }
+a:hover > .admin-stat { transform: translateY(-3px); box-shadow: 0 8px 26px rgba(139, 92, 246, .3); }
+.admin-stat span { color: var(--muted); font-size: .8rem; }
+.admin-stat strong { font-size: 2rem; line-height: 1; }
+.admin-stat.ok strong { color: var(--green); }
+.admin-stat.warn strong { color: #fbbf24; }
+.admin-stat.purple strong { color: #c4b5fd; }
+.admin-stat.cyan strong { color: var(--cyan); }
+.admin-badge { display: inline-block; font-size: .72rem; padding: .15rem .55rem; border-radius: 999px; border: 1px solid; }
+.admin-badge--ok { color: var(--green); border-color: rgba(34, 197, 94, .45); background: rgba(34, 197, 94, .1); }
+.admin-badge--warn { color: #fbbf24; border-color: rgba(251, 191, 36, .45); background: rgba(251, 191, 36, .1); }
+.admin-badge--bad { color: #f87171; border-color: rgba(248, 113, 113, .45); background: rgba(248, 113, 113, .1); }
+.admin-table { --bs-table-bg: transparent; --bs-table-color: var(--text); --bs-table-border-color: var(--border); }
+.admin-table th { color: var(--muted); font-weight: 500; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+.admin-coords { padding: 1rem; border-radius: 14px; background: rgba(0, 217, 255, .05); border: 1px solid rgba(0, 217, 255, .22); }
+.admin-geo { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.admin-geo button { width: 100%; text-align: left; padding: .5rem .7rem; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; }
+.admin-geo button:hover { border-color: var(--cyan); }
+.admin-geo small { display: block; color: var(--muted); }
+
+/* Visual dark sobre tiles claros do OpenStreetMap (sem precisar de chave de API) */
+.eco-map--dark .leaflet-tile-pane { filter: invert(1) hue-rotate(190deg) brightness(.9) contrast(.95) saturate(.55); }
