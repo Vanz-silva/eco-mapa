@@ -24,9 +24,10 @@ const REGION_NAMES = [
 ];
 const norm = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const REGIONS = REGION_NAMES.flatMap((n) => n.split('/').map((part) => ({ key: norm(part).trim(), slug: slugify(n) })))
+  .concat([{ key: 'arniqueiras', slug: 'arniqueira' }])
   .sort((a, b) => b.key.length - a.key.length);
 // Siglas e locais que pertencem ao Plano Piloto (slug "brasilia").
-const BRASILIA_ALIASES = ['asa sul', 'asa norte', 'plano piloto', 'esplanada', 'setor comercial sul', 'setor comercial norte', 'eixo monumental', 'sgas', 'sgan', 'sepn', 'sepn ', 'ses ', 'sps ', 'sqs', 'sqn', 'crs', 'crn', 'shcgn', 'shcgs'];
+const BRASILIA_ALIASES = ['noroeste', 'setor bancario sul', 'setor bancario norte', 'asa sul', 'asa norte', 'plano piloto', 'esplanada', 'setor comercial sul', 'setor comercial norte', 'eixo monumental', 'sgas', 'sgan', 'sepn', 'sepn ', 'ses ', 'sps ', 'sqs', 'sqn', 'crs', 'crn', 'shcgn', 'shcgs'];
 
 const decode = (s) => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
@@ -68,7 +69,7 @@ const field = (pm, re) => { const k = Object.keys(pm.data).find((x) => re.test(n
 
 function infer(pm) {
   const text = `${pm.name}\n${pm.description}\n${Object.values(pm.data).join('\n')}`;
-  let address = field(pm, /endereco|logradouro/) || line(pm.description, /^endere[cç]o\s*:?/i) || pm.description.split('\n')[0] || pm.name;
+  let address = field(pm, /endereco|logradouro/) || line(pm.description, /^endere[cç]o\s*:?/i) || pm.description.split('\n')[0] || '';
   const phone = field(pm, /telefone|fone|contato/) || (text.match(/\(?\b\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/) || [''])[0];
   const hours = field(pm, /horario|funcionamento/) || line(pm.description, /^hor[aá]rio[^:]*:?/i);
   const cep = (text.match(/\b\d{5}-?\d{3}\b/) || [''])[0];
@@ -81,8 +82,14 @@ function infer(pm) {
   return { address: address.slice(0, 250), phone, hours: hours.slice(0, 300), cep };
 }
 
-function guessRegion(pm, address) {
+function guessRegion(pm, address, place) {
   const hay = (s) => ` ${norm(s)} `;
+  if (place) {
+    const pl = norm(place);
+    const hit = REGIONS.find((r) => r.slug !== 'brasilia' && r.key.length >= 4 && new RegExp(`(^|[^a-z0-9])${r.key}([^a-z0-9]|$)`).test(pl));
+    if (hit) return { slug: hit.slug, basis: 'texto' };
+    if (pl === 'brasilia' || BRASILIA_ALIASES.some((a) => new RegExp(`(^|[^a-z0-9])${a.trim()}([^a-z0-9]|$)`).test(pl))) return { slug: 'brasilia', basis: 'texto' };
+  }
   const sets = [hay(address), hay(`${pm.name} ${pm.description}`)];
   for (const h of sets) {
     for (const r of REGIONS) {
@@ -94,20 +101,24 @@ function guessRegion(pm, address) {
     }
   }
   const all = sets.join(' ');
-  if (BRASILIA_ALIASES.some((a) => all.includes(` ${a.trim()}`)) || all.includes('brasilia')) return { slug: 'brasilia', basis: 'Brasília/Plano Piloto (confira)' };
+  if (BRASILIA_ALIASES.some((a) => new RegExp(`(^|[^a-z0-9])${a.trim()}([^a-z0-9]|$)`).test(all)) || all.includes('brasilia')) return { slug: 'brasilia', basis: 'Brasília/Plano Piloto (confira)' };
   return { slug: '', basis: 'não identificada' };
 }
 
-function classify(folderName, pm, withOleo) {
+// Só entram camadas de pilhas/baterias (e, com --with-oleo, óleo de COZINHA). Outras camadas são ignoradas.
+function classify(folderName, withOleo) {
   const f = norm(folderName);
-  const t = norm(`${pm.name} ${pm.description}`);
-  const dry = /pilha|bateria/;
-  const oil = /oleo (de cozinha|vegetal|de fritura)|oleo usado/;
   const out = [];
-  if (dry.test(f)) out.push('pilhas', 'baterias');
-  else if (dry.test(t) && !oil.test(f)) out.push('pilhas', 'baterias'); // citado no texto do ponto
-  if (withOleo && (oil.test(f) || oil.test(t))) out.push('oleo-vegetal');
-  return [...new Set(out)];
+  if (/pilha|bateria/.test(f)) out.push('pilhas', 'baterias');
+  if (withOleo && /oleo (de cozinha|vegetal|de fritura)|oleo usado/.test(f)) out.push('oleo-vegetal');
+  return out;
+}
+
+// Nome limpo e o local entre parênteses no fim do nome: "Drogasil (Asa Norte)" -> place "Asa Norte".
+function splitName(raw) {
+  const name = raw.replace(/^["“”'\s]+|["“”'\s]+$/g, '').replace(/\s+/g, ' ');
+  const m = name.match(/\(\s*([^()]+?)\s*\)\s*$/);
+  return { name, place: m ? m[1] : '' };
 }
 
 // Leitor de CSV mínimo (aspas, vírgulas e quebras de linha), sem dependências.
@@ -158,40 +169,77 @@ function main() {
   const H = ['name', 'address', 'region', 'neighborhood', 'postalCode', 'latitude', 'longitude', 'phone', 'openingHours', 'materials', 'description', 'extraInfo', 'source', 'sourceUrl', 'lastUpdated', 'verificationStatus', 'isDemo'];
   const rows = [];
   const seen = new Map();
-  const skipped = { layers: new Map(), outsideDF: 0, dup: 0, near: 0 };
+  // Pontos de qualquer camada com região no nome ("Drogasil (Asa Sul)") servem de referência de localização.
+  const refs = [];
+  for (const f of folders) {
+    for (const pm of f.placemarks) {
+      const { name, place } = splitName(pm.name || '');
+      const r = guessRegion(pm, '', place);
+      if (r.slug && r.basis === 'texto') refs.push({ lat: pm.lat, lng: pm.lng, slug: r.slug });
+    }
+  }
+  const skipped = { layers: new Map(), outsideDF: 0, dup: 0, near: 0, noAddress: 0 };
 
   for (const f of folders) {
     for (const pm of f.placemarks) {
-      const materials = classify(f.name, pm, withOleo);
+      const materials = classify(f.name, withOleo);
       if (!materials.length) { skipped.layers.set(f.name, (skipped.layers.get(f.name) || 0) + 1); continue; }
       if (!insideDF(pm.lat, pm.lng)) { skipped.outsideDF++; console.log(`✗ fora do DF: ${pm.name}`); continue; }
       if (nearPts.some((n) => haversineM(n.lat, n.lng, pm.lat, pm.lng) < 150)) { skipped.near++; continue; }
-      const info = infer(pm);
-      const k1 = `${norm(pm.name)}|${norm(info.address)}`;
-      const k2 = `${norm(pm.name)}|${pm.lat.toFixed(5)},${pm.lng.toFixed(5)}`;
-      const prev = seen.get(k1) || seen.get(k2);
+
+      const { name, place } = splitName(pm.name || 'Ponto de coleta');
+      const info = infer({ ...pm, name });
+      const realAddress = !!info.address;
+      const address = info.address || `Endereço não informado pela fonte (${pm.lat.toFixed(5)}, ${pm.lng.toFixed(5)})`;
+      if (!realAddress) skipped.noAddress++;
+
+      // Mesmo ponto = mesmo nome e mesma coordenada (ou mesmo nome e endereço real). Nomes iguais em lugares diferentes são pontos distintos.
+      const k1 = realAddress ? `${norm(name)}|${norm(address)}` : null;
+      const k2 = `${norm(name)}|${pm.lat.toFixed(5)},${pm.lng.toFixed(5)}`;
+      const prev = (k1 && seen.get(k1)) || seen.get(k2);
       if (prev) { materials.forEach((m) => prev.mats.add(m)); skipped.dup++; continue; } // mesmo ponto em 2 camadas: junta os materiais
-      const region = guessRegion(pm, info.address);
+
+      const region = guessRegion(pm, address, place);
+      const neighborhood = region.slug === 'brasilia' && place && norm(place) !== 'brasilia' ? place : '';
       const entry = {
         mats: new Set(materials),
-        row: [pm.name || 'Ponto de coleta', info.address, region.slug, '', info.cep, pm.lat.toFixed(6), pm.lng.toFixed(6), info.phone, info.hours,
+        row: [name, address, region.slug, neighborhood, info.cep, pm.lat.toFixed(6), pm.lng.toFixed(6), info.phone, info.hours,
           materials.join('|'), '', `Ponto de entrega voluntária da logística reversa (camada "${f.name}"). Extraído do mapa da Sema-DF em ${today}.`,
           SOURCE, SOURCE_URL, today, status, 'false'],
         region
       };
-      seen.set(k1, entry); seen.set(k2, entry);
+      if (k1) seen.set(k1, entry);
+      seen.set(k2, entry);
       rows.push(entry);
     }
   }
 
+  // Pontos sem região no nome (ex.: "Drogasil"): usa a região de um ponto rotulado a menos de 500 m.
+  let byProximity = 0;
+  for (const r of rows) {
+    if (r.region.slug) continue;
+    const lat = Number(r.row[5]); const lng = Number(r.row[6]);
+    let best = null;
+    for (const ref of refs) {
+      const d = haversineM(lat, lng, ref.lat, ref.lng);
+      if (d < 500 && (!best || d < best.d)) best = { d, slug: ref.slug };
+    }
+    if (best) {
+      r.region = { slug: best.slug, basis: 'proximidade' };
+      r.row[2] = best.slug;
+      r.row[11] += ' Região estimada pela proximidade de outros pontos do mapa.';
+      byProximity++;
+    }
+  }
   rows.forEach((r) => { r.row[9] = [...r.mats].join('|'); });
   const out = path.join(path.dirname(file), withOleo ? 'pontos-sema.csv' : 'pilhas-sema.csv');
   fs.writeFileSync(out, [H.join(','), ...rows.map((r) => r.row.map(esc).join(','))].join('\n') + '\n', 'utf8');
 
   const noRegion = rows.filter((r) => !r.region.slug).length;
-  const weak = rows.filter((r) => r.region.slug === 'brasilia' && r.region.basis !== 'texto').length;
+  const weak = rows.filter((r) => r.region.slug === 'brasilia' && r.region.basis !== 'texto' && r.region.basis !== 'proximidade').length;
   console.log(`${rows.length} ponto(s) gravados em ${out}`);
-  console.log(`  região identificada pelo texto: ${rows.length - noRegion - weak} | por "Brasília/Plano Piloto" (confira): ${weak} | sem região: ${noRegion}`);
+  console.log(`  região pelo nome/endereço: ${rows.length - noRegion - weak - byProximity} | por proximidade (<500 m): ${byProximity} | por "Brasília/Plano Piloto" (confira): ${weak} | sem região: ${noRegion}`);
+  console.log(`  sem endereço escrito na fonte: ${skipped.noAddress} (aparecem com as coordenadas)`);
   console.log(`  repetidos unidos: ${skipped.dup} | fora do DF: ${skipped.outsideDF} | já existentes (<150 m): ${skipped.near}`);
   for (const [name, n] of skipped.layers) console.log(`  camada ignorada (outros materiais): "${name}" (${n})`);
   console.log('\nPrimeiros pontos:');
