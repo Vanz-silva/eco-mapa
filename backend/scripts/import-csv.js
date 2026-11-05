@@ -21,7 +21,7 @@ const opt = z.string().transform((s) => sanitize(s) || undefined).optional();
 const row = z.object({
   name: z.string().transform(sanitize).pipe(z.string().min(3)),
   address: z.string().transform(sanitize).pipe(z.string().min(5)),
-  region: z.string().min(1), // slug da região
+  region: z.string().optional(), // slug da região (vazio = sem região)
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
   materials: z.string().min(1), // ex.: pilhas|baterias
@@ -49,8 +49,8 @@ for (const [i, raw] of records.entries()) {
   try {
     const r = row.parse(raw);
     if (!insideDF(r.latitude, r.longitude)) throw new Error('coordenadas fora do Distrito Federal (lat/lng trocados?)');
-    const regionId = regions.get(r.region);
-    if (!regionId) throw new Error(`região desconhecida: "${r.region}"`);
+    const regionId = r.region ? regions.get(r.region) : null;
+    if (r.region && !regionId) throw new Error(`região desconhecida: "${r.region}"`);
     const slugs = r.materials.split('|').map((s) => s.trim()).filter(Boolean);
     const materialIds = slugs.map((s) => {
       if (!materials.has(s)) throw new Error(`material desconhecido: "${s}"`);
