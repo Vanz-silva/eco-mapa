@@ -9,7 +9,7 @@ export default function AboutContact() {
           <h2>Descarte correto, sem adivinhar</h2>
           <div className="row g-3 mt-1">
             {[
-              [Map, 'Mapa aberto', 'Dados cartográficos do OpenStreetMap, com pontos de coleta no Distrito Federal.'],
+              [Map, 'Mapa do Google', 'Google Maps com os pontos de coleta do Distrito Federal, incluindo os Papa-Entulhos do SLU-DF.'],
               [ShieldCheck, 'Só dados verificados', 'Cada ponto mostra a fonte e a data da última atualização. Indicações da comunidade só entram após verificação.'],
               [Recycle, 'Três materiais', 'Pilhas, baterias e óleo vegetal usado: itens que não devem ir para o lixo comum.']
             ].map(([Icon, title, text]) => (
@@ -30,7 +30,7 @@ export default function AboutContact() {
       </section>
       <footer className="eco-footer">
         <div className="container-xl">
-          © {new Date().getFullYear()} EcoMapa DF · Mapa © contribuidores do OpenStreetMap · Tiles © CARTO
+          © {new Date().getFullYear()} EcoMapa DF · Mapa © Google
         </div>
       </footer>
     </>

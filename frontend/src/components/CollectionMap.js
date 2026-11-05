@@ -1,63 +1,83 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import { DF_CENTER, DF_ZOOM } from '@/lib/constants';
 import { pinKind } from '@/lib/geo';
+import { loadGoogleMaps, GOOGLE_KEY, GOOGLE_MAP_ID } from '@/lib/googleMaps';
 
-const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
-
-function pinIcon(L, point, selected) {
-  return L.divIcon({
-    className: 'eco-pin-wrap',
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-    html: `<div class="eco-pin eco-pin--${pinKind(point.materials)} ${selected ? 'is-selected' : ''}"><span class="eco-pin__pulse"></span><span class="eco-pin__core"></span></div>`
-  });
+// Marcadores são HTML (neon pulsante). O ponto de ancoragem do Google é o centro inferior,
+// então deslocamos o elemento 50% para o círculo ficar centrado na coordenada.
+function pinElement(point) {
+  const el = document.createElement('div');
+  el.className = `eco-pin eco-pin--${pinKind(point.materials)}`;
+  el.style.transform = 'translateY(50%)';
+  el.innerHTML = '<span class="eco-pin__pulse"></span><span class="eco-pin__core"></span>';
+  return el;
 }
 
-export default function CollectionMap({ points, selectedId, onSelect, userPos, focus }) {
+const toLatLng = (p) => ({ lat: p.latitude, lng: p.longitude });
+
+export default function CollectionMap({ points, selectedId, onSelect, userPos, focus, route }) {
   const el = useRef(null);
   const ctx = useRef(null);
   const prevSelected = useRef(null);
   const onSelectRef = useRef(onSelect);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState(GOOGLE_KEY ? null : 'NO_KEY');
   onSelectRef.current = onSelect;
 
-  // Inicialização (Leaflet só existe no navegador).
+  // Inicialização.
   useEffect(() => {
+    if (!GOOGLE_KEY) return undefined;
     let cancelled = false;
-    let observer;
-    (async () => {
-      const L = (await import('leaflet')).default;
-      window.L = L; // exigido pelo markercluster
-      await import('leaflet.markercluster');
-      if (cancelled || !el.current) return;
+    window.gm_authFailure = () => setError('AUTH'); // chave recusada pelo Google
 
-      const map = L.map(el.current, { zoomControl: false, center: DF_CENTER, zoom: DF_ZOOM, minZoom: 8, maxZoom: 19 });
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
-      L.tileLayer(TILES, { attribution: ATTRIBUTION, subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+    loadGoogleMaps()
+      .then(() => {
+        if (cancelled || !el.current) return;
+        const g = window.google.maps;
+        const map = new g.Map(el.current, {
+          center: { lat: DF_CENTER[0], lng: DF_CENTER[1] },
+          zoom: DF_ZOOM,
+          minZoom: 8,
+          mapId: GOOGLE_MAP_ID,
+          colorScheme: g.ColorScheme?.DARK ?? 'DARK',
+          backgroundColor: '#07111F',
+          disableDefaultUI: true,
+          zoomControl: true,
+          gestureHandling: 'greedy',
+          clickableIcons: false
+        });
+        map.addListener('click', () => onSelectRef.current(null));
 
-      const cluster = L.markerClusterGroup({
-        showCoverageOnHover: false,
-        maxClusterRadius: 55,
-        iconCreateFunction: (c) =>
-          L.divIcon({ className: 'eco-cluster-wrap', iconSize: [46, 46], html: `<div class="eco-cluster"><span>${c.getChildCount()}</span></div>` })
-      });
-      map.addLayer(cluster);
-      map.on('click', () => onSelectRef.current(null));
+        const cluster = new MarkerClusterer({
+          map,
+          markers: [],
+          renderer: {
+            render: ({ count, position }) => {
+              const c = document.createElement('div');
+              c.className = 'eco-cluster';
+              c.style.transform = 'translateY(50%)';
+              c.innerHTML = `<span>${count}</span>`;
+              return new g.marker.AdvancedMarkerElement({ position, content: c, zIndex: 1000 + count });
+            }
+          }
+        });
 
-      ctx.current = { L, map, cluster, markers: new Map(), user: null };
-      observer = new ResizeObserver(() => map.invalidateSize());
-      observer.observe(el.current);
-      setReady(true);
-    })();
+        ctx.current = { g, map, cluster, markers: new Map(), user: null, routeLines: [] };
+        setReady(true);
+      })
+      .catch((e) => { if (!cancelled) setError(e.message === 'NO_KEY' ? 'NO_KEY' : 'LOAD'); });
 
     return () => {
       cancelled = true;
-      observer?.disconnect();
-      ctx.current?.map.remove();
+      const c = ctx.current;
+      if (c) {
+        c.cluster.clearMarkers();
+        c.routeLines.forEach((l) => l.setMap(null));
+        c.user && (c.user.map = null);
+        c.g.event.clearInstanceListeners(c.map);
+      }
       ctx.current = null;
       setReady(false);
     };
@@ -66,40 +86,52 @@ export default function CollectionMap({ points, selectedId, onSelect, userPos, f
   // Marcadores + enquadramento.
   useEffect(() => {
     if (!ready) return;
-    const { L, map, cluster, markers } = ctx.current;
-    cluster.clearLayers();
+    const { g, map, cluster, markers } = ctx.current;
+    cluster.clearMarkers();
     markers.clear();
     prevSelected.current = null;
 
-    const layers = points.map((p) => {
-      const m = L.marker([p.latitude, p.longitude], { icon: pinIcon(L, p, false), title: p.name, alt: p.name, riseOnHover: true });
-      m.on('click', (e) => { L.DomEvent.stopPropagation(e); onSelectRef.current(p.id); });
-      markers.set(p.id, { marker: m, point: p });
-      return m;
+    const list = points.map((p) => {
+      const content = pinElement(p);
+      const marker = new g.marker.AdvancedMarkerElement({ position: toLatLng(p), content, title: p.name, gmpClickable: true });
+      marker.addEventListener('gmp-click', () => onSelectRef.current(p.id));
+      markers.set(p.id, { marker, el: content, point: p });
+      return marker;
     });
-    cluster.addLayers(layers);
+    cluster.addMarkers(list);
 
-    const coords = points.map((p) => [p.latitude, p.longitude]);
-    if (userPos) coords.push([userPos.lat, userPos.lng]);
-    if (coords.length) map.flyToBounds(L.latLngBounds(coords), { padding: [60, 60], maxZoom: 15, duration: 0.8 });
+    const bounds = new g.LatLngBounds();
+    points.forEach((p) => bounds.extend(toLatLng(p)));
+    if (userPos) bounds.extend({ lat: userPos.lat, lng: userPos.lng });
+    if (!bounds.isEmpty()) {
+      if (points.length + (userPos ? 1 : 0) === 1) {
+        map.setCenter(bounds.getCenter());
+        map.setZoom(15);
+      } else {
+        map.fitBounds(bounds, 60);
+        g.event.addListenerOnce(map, 'idle', () => { if (map.getZoom() > 16) map.setZoom(16); });
+      }
+    }
   }, [ready, points, userPos]);
 
   // Região sem pontos: centraliza se houver coordenadas cadastradas.
   useEffect(() => {
     if (!ready || !focus) return;
-    ctx.current.map.flyTo([focus.lat, focus.lng], 13, { duration: 0.9 });
+    const { map } = ctx.current;
+    map.panTo({ lat: focus.lat, lng: focus.lng });
+    map.setZoom(13);
   }, [ready, focus]);
 
   // Seleção.
   useEffect(() => {
     if (!ready) return;
-    const { L, map, cluster, markers } = ctx.current;
-    const prev = markers.get(prevSelected.current);
-    if (prev) prev.marker.setIcon(pinIcon(L, prev.point, false));
+    const { map, markers } = ctx.current;
+    markers.get(prevSelected.current)?.el.classList.remove('is-selected');
     const cur = markers.get(selectedId);
     if (cur) {
-      cur.marker.setIcon(pinIcon(L, cur.point, true));
-      cluster.zoomToShowLayer(cur.marker, () => map.panTo(cur.marker.getLatLng(), { animate: true }));
+      cur.el.classList.add('is-selected');
+      map.panTo(toLatLng(cur.point));
+      if ((map.getZoom() ?? 0) < 14) map.setZoom(14);
     }
     prevSelected.current = selectedId;
   }, [ready, selectedId]);
@@ -108,16 +140,58 @@ export default function CollectionMap({ points, selectedId, onSelect, userPos, f
   useEffect(() => {
     if (!ready) return;
     const c = ctx.current;
-    c.user?.remove();
-    c.user = null;
+    if (c.user) { c.user.map = null; c.user = null; }
     if (userPos) {
-      c.user = c.L.marker([userPos.lat, userPos.lng], {
-        icon: c.L.divIcon({ className: 'eco-pin-wrap', iconSize: [20, 20], html: '<div class="eco-user"></div>' }),
-        interactive: false,
-        zIndexOffset: 1000
-      }).addTo(c.map);
+      const dot = document.createElement('div');
+      dot.className = 'eco-user';
+      dot.style.transform = 'translateY(50%)';
+      c.user = new c.g.marker.AdvancedMarkerElement({ map: c.map, position: { lat: userPos.lat, lng: userPos.lng }, content: dot, zIndex: 2000 });
     }
   }, [ready, userPos]);
 
-  return <div ref={el} className="eco-map" role="application" aria-label="Mapa interativo de pontos de coleta" />;
+  // Rota desenhada (brilho + linha). O trajeto vem do nosso servidor de rotas.
+  useEffect(() => {
+    if (!ready) return;
+    const c = ctx.current;
+    c.routeLines.forEach((l) => l.setMap(null));
+    c.routeLines = [];
+    if (!route || route.length < 2) return;
+    const path = route.map(([lat, lng]) => ({ lat, lng }));
+    const base = { path, map: c.map, clickable: false, strokeColor: '#00D9FF' };
+    c.routeLines = [
+      new c.g.Polyline({ ...base, strokeOpacity: 0.25, strokeWeight: 12, zIndex: 1 }),
+      new c.g.Polyline({ ...base, strokeOpacity: 0.95, strokeWeight: 4, zIndex: 2 })
+    ];
+    const bounds = new c.g.LatLngBounds();
+    path.forEach((p) => bounds.extend(p));
+    c.map.fitBounds(bounds, { top: 90, left: 60, right: 60, bottom: 260 });
+  }, [ready, route]);
+
+  return (
+    <>
+      <div ref={el} className="eco-map" role="application" aria-label="Mapa interativo de pontos de coleta" />
+      {error && (
+        <div className="eco-map-fallback" role="alert">
+          {error === 'NO_KEY' && (
+            <>
+              <strong>Chave do Google Maps não configurada</strong>
+              <span>Defina <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> em <code>frontend/.env.local</code> e reinicie o <code>npm run dev</code>.</span>
+            </>
+          )}
+          {error === 'AUTH' && (
+            <>
+              <strong>O Google recusou a chave</strong>
+              <span>Confira no Google Cloud: cobrança ativa, “Maps JavaScript API” habilitada e o endereço deste site liberado na restrição da chave.</span>
+            </>
+          )}
+          {error === 'LOAD' && (
+            <>
+              <strong>Não foi possível carregar o Google Maps</strong>
+              <span>Verifique sua conexão e a chave, e recarregue a página.</span>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
 }
