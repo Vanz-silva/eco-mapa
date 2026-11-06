@@ -9,7 +9,7 @@ import * as svc from '../services/pointsService.js';
 const router = Router();
 
 const page = z.coerce.number().int().min(1).default(1);
-const limit = z.coerce.number().int().min(1).max(100).default(20);
+const limit = z.coerce.number().int().min(1).max(500).default(20);
 const slug = z.string().regex(/^[a-z0-9-]+$/).max(60);
 const q = z.string().min(2).max(100).transform(sanitize).pipe(z.string().min(2));
 
@@ -19,7 +19,7 @@ const nearbyQ = z.object({
   lng: z.coerce.number().min(-180).max(180),
   radiusKm: z.coerce.number().positive().max(100).optional(), // omitido = todas as distâncias
   material: slug.optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50)
+  limit: z.coerce.number().int().min(1).max(500).default(50)
 });
 const searchQ = z.object({ q, material: slug.optional(), page, limit });
 const suggestQ = z.object({ q });

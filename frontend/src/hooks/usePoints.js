@@ -15,11 +15,11 @@ export function usePoints({ material, region, radiusKm, query, userPos }) {
       try {
         let res;
         if (lat != null) {
-          res = await api.get('/collection-points/nearby', { lat, lng, radiusKm, material, limit: 200 }, ctrl.signal);
+          res = await api.get('/collection-points/nearby', { lat, lng, radiusKm, material, limit: 500 }, ctrl.signal);
         } else if (query) {
-          res = await api.get('/collection-points/search', { q: query, material, limit: 100 }, ctrl.signal);
+          res = await api.get('/collection-points/search', { q: query, material, limit: 500 }, ctrl.signal);
         } else {
-          res = await api.get('/collection-points', { material, region, limit: 100 }, ctrl.signal);
+          res = await api.get('/collection-points', { material, region, limit: 500 }, ctrl.signal);
         }
         let points = res.data;
         // Região combinada com proximidade/busca é filtrada aqui.
